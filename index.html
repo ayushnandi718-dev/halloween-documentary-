@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Spooky Story Teller</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Tone.js -->
+    <script src="https://unpkg.com/tone@14.8.49/build/Tone.js"></script>
+    <style>
+        /* Custom font for a mysterious vibe */
+        @import url('https://fonts.googleapis.com/css2?family=Creepster&family=Inter:wght@400;700&display=swap');
+        .creepster { font-family: 'Creepster', cursive; }
+        .story-text { font-family: 'Inter', sans-serif; line-height: 1.8; }
+        .glow-red { text-shadow: 0 0 10px rgba(255, 0, 0, 0.8), 0 0 20px rgba(255, 0, 0, 0.6); }
+        .text-reveal::after {
+            content: "";
+            animation: typing 4s steps(40, end) forwards;
+            display: inline;
+        }
+        @keyframes typing {
+            from { width: 0 }
+            to { width: 100% }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen flex items-center justify-center p-4">
+
+    <!-- Main Container -->
+    <div id="app-container" class="w-full max-w-2xl bg-gray-800 rounded-xl shadow-2xl p-8 transition-all duration-500">
+        <h1 class="creepster text-5xl text-red-500 glow-red text-center mb-8">
+            The Echoing Halls
+        </h1>
+
+        <!-- Start Button (To initiate AudioContext) -->
+        <button id="start-button" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg transition duration-300 shadow-lg mb-6">
+            Begin the Tale (Click Me First!)
+        </button>
+
+        <!-- Story Display -->
+        <div id="story-display" class="hidden text-center cursor-pointer p-6 rounded-lg border-2 border-red-500 bg-gray-700 hover:bg-gray-600 transition-all duration-300">
+            <p id="current-story-text" class="story-text text-xl"></p>
+            <p class="mt-4 text-sm text-red-300">
+                Click anywhere in this box to continue...
+            </p>
+        </div>
+
+        <!-- Message Box -->
+        <div id="message-box" class="fixed top-0 left-0 w-full h-full bg-black bg-opacity-75 hidden items-center justify-center z-50">
+            <div class="bg-gray-700 p-8 rounded-lg shadow-2xl border-2 border-red-500 text-center">
+                <p id="message-content" class="text-xl font-semibold mb-4"></p>
+                <button onclick="document.getElementById('message-box').classList.add('hidden')" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Firebase Globals (Required for environment) ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        // FIX: Renaming the local const to 'initialAuthToken' prevents a ReferenceError 
+        // when checking the external global variable '__initial_auth_token' before its full initialization.
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        // --- End Firebase Globals ---
+
+        let synth = null;
+        let isToneStarted = false;
+        let currentStep = 0;
+
+        // The story steps. When a step has playSound: true, the spooky chord will be played.
+        const story = [
+            { text: "The old manor stood against the stormy sky, its windows like empty eyes.", playSound: false },
+            { text: "A sudden cold draft swept through the abandoned foyer, though every door was sealed tight.", playSound: true }, // Plays the chord here
+            { text: "A faint whisper, too low to understand, seemed to brush past your ear.", playSound: false },
+            { text: "Then, the sound came from the depths of the house—a mournful, metallic groan.", playSound: true }, // Plays the chord again
+            { text: "You turn to run, but a shadow on the wall is impossibly long, reaching...", playSound: false },
+            { text: "The End. Or is it? Click to restart the terror.", playSound: false, isFinal: true }
+        ];
+
+        /**
+         * Initializes the Tone.js AudioContext and the PolySynth for playing chords.
+         * This function must be called on a user-initiated event (like a button click).
+         */
+        function setupTone() {
+            if (isToneStarted) return;
+            try {
+                // 1. Start the AudioContext
+                Tone.start();
+
+                // 2. IMPORTANT FIX: Initialize PolySynth (polyphonic) instead of a monophonic Synth.
+                // PolySynth is required to play an array of notes (a chord).
+                synth = new Tone.PolySynth(Tone.Synth, {
+                    oscillator: { type: "sawtooth" },
+                    envelope: {
+                        attack: 0.1,
+                        decay: 0.2,
+                        sustain: 0.5,
+                        release: 1.5
+                    },
+                    detune: 50 // Slight detuning for an eerie, unsettling feel
+                }).toDestination();
+
+                isToneStarted = true;
+                document.getElementById('start-button').classList.add('hidden');
+                document.getElementById('story-display').classList.remove('hidden');
+                console.log("Tone.js AudioContext started and PolySynth initialized.");
+
+            } catch (e) {
+                // Use custom message box instead of alert()
+                showMessage("Audio Error", "Could not start the audio context. Please refresh and try again.");
+                console.error("Failed to start Tone.js:", e);
+            }
+        }
+
+        /**
+         * Plays the spooky A minor chord using the PolySynth.
+         * This function now works correctly because 'synth' is a PolySynth.
+         */
+        function playSpookySound() {
+            if (!synth || !isToneStarted) {
+                console.warn("Tone.js not ready to play sound.");
+                return;
+            }
+
+            // The problematic chord array, now used correctly with PolySynth: ["A2","C#3","E3"]
+            const chord = ["A2", "C#3", "E3"];
+            const duration = "2n"; // Half note duration for a drawn-out sound
+            const velocity = 0.6;
+            
+            // The PolySynth correctly accepts the array of notes.
+            synth.triggerAttackRelease(chord, duration, Tone.now(), velocity);
+        }
+
+        /**
+         * Advances the story and plays sound if required.
+         */
+        function showStory() {
+            if (!isToneStarted) {
+                showMessage("Wait!", "Please click the 'Begin the Tale' button first to start the audio system.");
+                return;
+            }
+
+            const storyElement = story[currentStep];
+            const textDisplay = document.getElementById('current-story-text');
+
+            // Reset animation class for next step
+            textDisplay.classList.remove('text-reveal');
+
+            // Timeout ensures the class is removed before re-adding, triggering the animation again
+            setTimeout(() => {
+                textDisplay.textContent = storyElement.text;
+                textDisplay.classList.add('text-reveal');
+            }, 50);
+
+            if (storyElement.playSound) {
+                playSpookySound();
+            }
+
+            if (storyElement.isFinal) {
+                currentStep = 0; // Prepare to restart
+                return;
+            }
+
+            currentStep = (currentStep + 1) % story.length;
+        }
+        
+        /**
+         * Shows a custom message box instead of using the forbidden alert().
+         */
+        function showMessage(title, content) {
+            document.getElementById('message-content').innerHTML = `<strong>${title}</strong><br>${content}`;
+            document.getElementById('message-box').classList.remove('hidden');
+            document.getElementById('message-box').classList.add('flex');
+        }
+
+        // --- Event Listeners ---
+        document.getElementById('start-button').addEventListener('click', setupTone);
+        document.getElementById('story-display').addEventListener('click', showStory);
+
+        // Initial state display
+        document.addEventListener('DOMContentLoaded', () => {
+             // Display a starting message
+            document.getElementById('current-story-text').textContent = "Prepare to enter the Echoing Halls...";
+            document.getElementById('current-story-text').classList.add('text-reveal');
+        });
+    </script>
+</body>
+</html>
