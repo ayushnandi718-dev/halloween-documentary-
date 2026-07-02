@@ -1,3 +1,0 @@
-# Team
-
-- Ayushnandi11111
