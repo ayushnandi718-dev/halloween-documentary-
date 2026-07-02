@@ -1,3 +1,0 @@
-## Credits
-
-- Ayushnandi11111
